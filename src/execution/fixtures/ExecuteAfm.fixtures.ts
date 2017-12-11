@@ -33,25 +33,7 @@ const emptyResponse: Execution.IExecutionResponses = {
             }
         }
     },
-    executionResult: {
-        executionResult: {
-            data: [],
-            paging: {
-                count: [
-                    0,
-                    0
-                ],
-                offset: [
-                    0,
-                    0
-                ],
-                total: [
-                    0,
-                    0
-                ]
-            }
-        }
-    }
+    executionResult: null
 };
 
 const tooLargeResponse: Execution.IError = {

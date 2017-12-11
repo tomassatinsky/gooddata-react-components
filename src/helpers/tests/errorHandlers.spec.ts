@@ -30,7 +30,7 @@ describe('convertErrors', () => {
 });
 
 describe('checkEmptyResult', () => {
-    it('should throw 204 if executionResult does not contain any data', () => {
+    it('should throw 204 on null executionResult', () => {
         expect.hasAssertions();
 
         try {

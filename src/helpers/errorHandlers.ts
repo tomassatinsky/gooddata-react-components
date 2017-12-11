@@ -29,7 +29,7 @@ export function convertErrors(error: Execution.IError) {
 }
 
 export function checkEmptyResult(responses: Execution.IExecutionResponses) {
-    if (responses.executionResult.executionResult.data.length === 0) {
+    if (responses.executionResult === null) {
         throw {
             response: {
                 status: 204
