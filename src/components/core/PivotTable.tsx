@@ -9,7 +9,8 @@ import {
     IDatasource,
     IGetRowsParams,
     SortChangedEvent,
-    ColumnResizedEvent
+    ColumnResizedEvent,
+    BodyScrollEvent
 } from 'ag-grid';
 import { AgGridReact } from 'ag-grid-react';
 import { CellClassParams } from 'ag-grid/dist/lib/entities/colDef';
@@ -52,7 +53,7 @@ import {
 } from '../../helpers/mappingHeader';
 
 import { getCellClassNames, getMeasureCellFormattedValue, getMeasureCellStyle } from '../../helpers/tableCell';
-import { IColumnDefOptions, IGridCellEvent, IGridHeader, IGridRow } from '../../interfaces/AGGrid';
+import { IColumnDefOptions, IGridCellEvent, IGridHeader, IGridRow, IGridTotalsRow } from '../../interfaces/AGGrid';
 
 import { IDrillEvent, IDrillEventContextTable, IDrillEventIntersectionElement } from '../../interfaces/DrillEvents';
 import { IHeaderPredicate } from '../../interfaces/HeaderPredicate';
@@ -79,6 +80,7 @@ import ColumnGroupHeader from './pivotTable/ColumnGroupHeader';
 import ColumnHeader from './pivotTable/ColumnHeader';
 import { GroupingProviderFactory, IGroupingProvider } from './pivotTable/GroupingProvider';
 import ApiWrapper from './pivotTable/agGridApiWrapper';
+import { updateStickyHeaders } from './pivotTable/stickyGroupHandler';
 
 export interface IPivotTableProps extends ICommonChartProps, IDataSourceProviderInjectedProps {
     totals?: VisualizationObject.IVisualizationTotal[];
@@ -256,6 +258,21 @@ export const getSortsFromModel = (
     });
 };
 
+const totalsHasChanged = (gridApi: GridApi, totals: IGridTotalsRow[]) => {
+    const totalsCount = gridApi.getPinnedBottomRowCount();
+    if (totalsCount !== totals.length) {
+        return true;
+    }
+
+    for (let i = 0; i < totalsCount; i++) {
+        if (gridApi.getPinnedBottomRow(i).data !== totals[i]) {
+            return true;
+        }
+    }
+
+    return false;
+};
+
 export const getAGGridDataSource = (
     resultSpec: AFM.IResultSpec,
     getPage: IGetPage,
@@ -330,7 +347,10 @@ export const getAGGridDataSource = (
                 onSuccess(execution, columnDefs, resultSpecUpdated);
                 successCallback(rowData, lastRow);
                 // set totals
-                getGridApi().setPinnedBottomRowData(rowTotals);
+
+                if (rowTotals && totalsHasChanged(getGridApi(), rowTotals)) {
+                    getGridApi().setPinnedBottomRowData(rowTotals);
+                }
 
                 return execution;
             });
@@ -413,6 +433,8 @@ interface ISortedByColumnIndexes {
     all: number[];
 }
 
+const DEFAULT_ROW_HEIGHT = 28;
+
 export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IPivotTableState> {
     public static defaultProps: Partial<IPivotTableInnerProps> = {
         ...commonDefaultProps,
@@ -429,6 +451,7 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
     private gridApi: GridApi;
     private containerRef: HTMLDivElement;
     private groupingProvider: IGroupingProvider;
+    private lastScrollTop: number = 0;
 
     constructor(props: IPivotTableInnerProps) {
         super(props);
@@ -527,7 +550,7 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
 
         const attributeId = colDef.field;
         const isPinnedRow = cellClassParams.node.isRowPinned();
-        const hiddenCell = !isPinnedRow && this.groupingProvider.isRepeated(attributeId, rowIndex);
+        const hiddenCell = !isPinnedRow && this.groupingProvider.isRepeatedValue(attributeId, rowIndex);
         const rowSeparator = !hiddenCell && this.groupingProvider.isGroupBoundary(rowIndex);
 
         return classNames(
@@ -610,6 +633,15 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
     public onGridReady = (params: GridReadyEvent) => {
         this.gridApi = params.api;
         this.setGridDataSource();
+
+        this.gridApi.setPinnedTopRowData([{}]);
+    }
+
+    public onModelUpdated = () => {
+        this.setStickyRowTop();
+        const scrollTop = this.lastScrollTop;
+        this.lastScrollTop = 0;
+        this.updateStickyRow(scrollTop);
     }
 
     public setGridDataSource() {
@@ -729,6 +761,12 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
         });
     }
 
+    public onBodyScroll = (event: BodyScrollEvent) => {
+        if (event.direction === 'vertical') {
+            this.updateStickyRow(event.top);
+        }
+    }
+
     public renderVisualization() {
         const { columnDefs, rowData, desiredHeight } = this.state;
         const { pageSize } = this.props;
@@ -786,6 +824,8 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
             infiniteInitialRowCount: pageSize,
             maxBlocksInCache: 10,
             onGridReady: this.onGridReady,
+            onModelUpdated: this.onModelUpdated,
+            onBodyScroll: this.onBodyScroll,
 
             // this provides persistent row selection (if enabled)
             getRowNodeId,
@@ -852,7 +892,8 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
             },
 
             // Custom CSS classes
-            rowClass: 'gd-table-row'
+            rowClass: 'gd-table-row',
+            rowHeight: DEFAULT_ROW_HEIGHT
         };
 
         // columnDefs are loaded with first page request. Show overlay loading before first page is available.
@@ -970,23 +1011,33 @@ export class PivotTableInner extends BaseVisualization<IPivotTableInnerProps, IP
         this.setGridDataSource();
     }
 
-    private getRowHeight(): number {
-        const DEFAULT_ROW_HEIGHT = 28;
+    private setStickyRowTop(): void {
+        const headerHeight = ApiWrapper.getHeaderHeight(this.gridApi);
+        ApiWrapper.setPinnedTopRowStyle(this.gridApi, 'top', `${headerHeight - 1}px`);
+    }
 
-        return this.gridApi
-            ? ApiWrapper.getRowHeight(this.gridApi)
-            : DEFAULT_ROW_HEIGHT;
+    private updateStickyRow(scrollTop: number): void {
+        if (this.gridApi) {
+            updateStickyHeaders(
+                scrollTop,
+                this.lastScrollTop,
+                DEFAULT_ROW_HEIGHT,
+                this.gridApi,
+                this.groupingProvider,
+                ApiWrapper
+            );
+        }
+        this.lastScrollTop = scrollTop;
     }
 
     private getTotalBodyHeight(executionResult: Execution.IExecutionResult): number {
         const aggregationCount = sumBy(executionResult.totals, total => total.length);
         const rowCount = executionResult.paging.total[0];
 
-        const rowHeight = this.getRowHeight();
         const headerHeight = ApiWrapper.getHeaderHeight(this.gridApi);
         const leeway = 1; // add small room for error to avoid scrollbars that scroll one, two pixels
-        const bodyHeight = rowCount * rowHeight + leeway;
-        const footerHeight = aggregationCount * rowHeight;
+        const bodyHeight = rowCount * DEFAULT_ROW_HEIGHT + leeway;
+        const footerHeight = aggregationCount * DEFAULT_ROW_HEIGHT;
 
         return headerHeight + bodyHeight + footerHeight;
     }

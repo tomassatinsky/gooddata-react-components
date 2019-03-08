@@ -160,10 +160,14 @@ $header-cell-resize-width: 20px;
         display: none;
     }
 
-    .gd-cell-hide {
+    .gd-cell-hide{
         color: transparent;
         border-top: 1px solid transparent;
         background-color: white;
+    }
+
+    .gd-cell-show-hidden {
+        color: initial;
     }
 
     .gd-table-row-separator {
@@ -330,5 +334,29 @@ $header-cell-resize-width: 20px;
     &-arrow-up::before {
         top: -2px;
         transform: rotate(180deg);
+    }
+}
+
+.ag-floating-top {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+
+    &.gd-hidden-sticky-row {
+        display: none;
+    }
+
+    .ag-row {
+        background-color: transparent;
+
+        .ag-cell {
+            background-color: #fff;
+
+            &.gd-hidden-sticky-column,
+            &.gd-measure-column {
+                background-color: transparent;
+                color: transparent;
+            }
+        }
     }
 }
